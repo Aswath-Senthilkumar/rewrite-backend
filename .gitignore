@@ -1,0 +1,43 @@
+# --- Project Specific ---
+HELP.md
+target/
+!.mvn/wrapper/maven-wrapper.jar
+/build/
+
+# --- Environment & Secrets (CRITICAL) ---
+.env
+.env.local
+.env.*.local
+*.properties.local
+
+# --- IDEs ---
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+### VS Code ###
+.vscode/
+*.code-workspace
+.history/
+
+### STS / Eclipse ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+# --- OS Specific ---
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+
+# --- Logs ---
+*.log
+logs/
