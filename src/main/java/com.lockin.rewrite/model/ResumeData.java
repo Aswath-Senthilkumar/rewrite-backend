@@ -13,8 +13,11 @@ import java.util.List;
 public class ResumeData {
 
     private PersonalInfo personalInfo;
+    private String summary;
     private List<Education> education;
     private Skills skills;
     private List<Experience> experience;
     private List<Project> projects;
+    private List<Certification> certifications;
+    private List<Award> awards;
 }

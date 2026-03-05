@@ -121,6 +121,13 @@ public class LatexService {
             sb.append("\\vspace{-20pt}\n");
         }
 
+        // Professional Summary
+        if (data.getSummary() != null && !data.getSummary().isEmpty()) {
+            sb.append("\\section{PROFESSIONAL SUMMARY}\n");
+            sb.append("\\small{").append(escape(data.getSummary())).append("}\n");
+            sb.append("\\vspace{-10pt}\n");
+        }
+
         // Education
         if (data.getEducation() != null && !data.getEducation().isEmpty()) {
             sb.append("\\section{EDUCATION}\n");
@@ -229,6 +236,34 @@ public class LatexService {
                 }
             }
             sb.append("\\resumeSubHeadingListEnd\n");
+        }
+
+        // Certifications
+        if (data.getCertifications() != null && !data.getCertifications().isEmpty()) {
+            sb.append("\\section{CERTIFICATIONS}\n");
+            sb.append("\\resumeSubHeadingListStart\n");
+            for (Certification cert : data.getCertifications()) {
+                sb.append("  \\resumeSubheading\n");
+                sb.append("    {").append(escape(cert.getName())).append("}{").append(escape(cert.getDate())).append("}\n");
+                sb.append("    {").append(escape(cert.getIssuer())).append("}{}\n");
+                sb.append("    \\vspace{5pt}\n");
+            }
+            sb.append("\\resumeSubHeadingListEnd\n");
+            sb.append("\\vspace{-26pt}\n");
+        }
+
+        // Awards
+        if (data.getAwards() != null && !data.getAwards().isEmpty()) {
+            sb.append("\\section{AWARDS}\n");
+            sb.append("\\resumeSubHeadingListStart\n");
+            for (Award award : data.getAwards()) {
+                sb.append("  \\resumeSubheading\n");
+                sb.append("    {").append(escape(award.getTitle())).append("}{").append(escape(award.getDate())).append("}\n");
+                sb.append("    {").append(escape(award.getIssuer())).append("}{}\n");
+                sb.append("    \\vspace{5pt}\n");
+            }
+            sb.append("\\resumeSubHeadingListEnd\n");
+            sb.append("\\vspace{-26pt}\n");
         }
 
         sb.append("\\end{document}\n");
