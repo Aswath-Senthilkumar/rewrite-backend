@@ -179,7 +179,13 @@ public class LatexService {
                 sb.append("    \\resumeItemListStart\n");
                 if (exp.getBulletPoints() != null) {
                     for (BulletPoints bp : exp.getBulletPoints()) {
-                        String text = bp.isAccepted() ? bp.getImproved() : bp.getOriginal();
+                        // Logic changed: if improved is null or empty, fallback to original
+                        String text;
+                        if (bp.isAccepted()) {
+                            text = (bp.getImproved() != null && !bp.getImproved().isEmpty()) ? bp.getImproved() : bp.getOriginal();
+                        } else {
+                            text = bp.getOriginal();
+                        }
                         sb.append("      \\resumeItem{").append(escape(text)).append("}\n");
                     }
                 }
@@ -225,7 +231,13 @@ public class LatexService {
                 sb.append("    \\resumeItemListStart\n");
                 if (proj.getBulletPoints() != null) {
                     for (BulletPoints bp : proj.getBulletPoints()) {
-                        String text = bp.isAccepted() ? bp.getImproved() : bp.getOriginal();
+                        // Logic changed: if improved is null or empty, fallback to original
+                        String text;
+                        if (bp.isAccepted()) {
+                            text = (bp.getImproved() != null && !bp.getImproved().isEmpty()) ? bp.getImproved() : bp.getOriginal();
+                        } else {
+                            text = bp.getOriginal();
+                        }
                         sb.append("      \\resumeItem{").append(escape(text)).append("}\n");
                     }
                 }
@@ -273,13 +285,47 @@ public class LatexService {
     private String escape(String input) {
         if (input == null)
             return "";
-        return input.replace("&", "\\&")
+        
+        // If the input already contains escaped characters (like \\%), we should not double escape them.
+        // A simple heuristic is to check if the string contains backslashes followed by special chars.
+        // However, since the input might be a mix of escaped and unescaped, it's safer to unescape first
+        // or handle it more robustly.
+        
+        // Given the user's issue: "40\\%" -> this means the string literal in Java is "40\\%", which prints as "40\%".
+        // When we call escape("40\\%"), it becomes "40\\\\\\%".
+        // LaTeX sees "40\\%" -> "40" followed by a line break (\\) and then "%" (comment).
+        
+        // The fix is to ensure we don't double-escape if it's already escaped, OR we clean it up first.
+        // Since the ResumeAnalyzerService is now escaping it, we might be double escaping here.
+        
+        // Let's try to normalize: replace double backslashes with single backslashes first?
+        // Or better, just handle the specific case the user mentioned.
+        
+        // If the input comes from the AI service, it might already have escaped characters like "\&" or "\%".
+        // If we escape again, it becomes "\\&" or "\\%".
+        // In LaTeX, "\\" is a newline. So "40\\%" is interpreted as "40" + newline + comment.
+        
+        // Strategy:
+        // 1. Unescape common LaTeX escapes to their raw form.
+        // 2. Re-escape everything properly.
+        
+        String unescaped = input
+                .replace("\\\\", "\\") // Unescape double backslashes first
+                .replace("\\&", "&")
+                .replace("\\%", "%")
+                .replace("\\$", "$")
+                .replace("\\#", "#")
+                .replace("\\_", "_")
+                .replace("\\{", "{")
+                .replace("\\}", "}");
+
+        return unescaped.replace("&", "\\&")
                 .replace("%", "\\%")
                 .replace("$", "\\$")
-                .replace("#", "\\#")
-                .replace("_", "\\_")
-                .replace("{", "\\{")
-                .replace("}", "\\}")
+                .replace("#", "\\\\#")
+                .replace("_", "\\\\_")
+                .replace("{", "\\\\{")
+                .replace("}", "\\\\}")
                 .replace("~", "\\textasciitilde ")
                 .replace("^", "\\textasciicircum ");
     }
