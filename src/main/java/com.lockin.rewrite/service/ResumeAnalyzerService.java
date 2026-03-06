@@ -1,6 +1,8 @@
 package com.lockin.rewrite.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.lockin.rewrite.model.AnalysisResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -9,10 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
-import java.awt.color.ICC_ColorSpace;
 import java.util.List;
 import java.util.Map;
 
@@ -31,134 +30,202 @@ public class ResumeAnalyzerService {
     public ResumeAnalyzerService() {
         this.restTemplate = new RestTemplate();
         this.objectMapper = new ObjectMapper();
-
         this.objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
-    @org.springframework.cache.annotation.Cacheable(value = "analyses", key = "{#resumeKey, #jobDescription")
+    @org.springframework.cache.annotation.Cacheable(value = "analyses", key = "{#resumeKey, #jobDescription}")
     public AnalysisResponse analyzeResume(String resumeText, String jobDescription, List<String> missingKeywordsIgnored, String resumeKey) {
-        String prompt = buildPrompt(resumeText, jobDescription);
         try {
-            String jsonResponse = callGeminiApi(prompt);
-            return parseResponse(jsonResponse, resumeText);
+            // Step 1: Extraction
+            String extractionPrompt = buildExtractionPrompt(jobDescription);
+            String extractionResponse = callGeminiApi(extractionPrompt);
+            JsonNode extractionJson = parseJson(extractionResponse);
+
+            // Step 2: Gap Analysis
+            String gapAnalysisPrompt = buildGapAnalysisPrompt(resumeText, extractionJson.toString());
+            String gapAnalysisResponse = callGeminiApi(gapAnalysisPrompt);
+            JsonNode gapAnalysisJson = parseJson(gapAnalysisResponse);
+
+            // Step 3: Injection & Rewrite
+            String injectionPrompt = buildInjectionPrompt(resumeText, jobDescription, gapAnalysisJson.toString(), missingKeywordsIgnored);
+            String injectionResponse = callGeminiApi(injectionPrompt);
+            
+            return parseResponse(injectionResponse, resumeText);
         } catch (Exception e) {
-            System.err.println("Error in analyzeResume" + e.getMessage());
+            System.err.println("Error in analyzeResume: " + e.getMessage());
             e.printStackTrace();
             throw e;
         }
     }
 
-    private String buildPrompt(String resumeText, String jobDescription) {
+    private String buildExtractionPrompt(String jobDescription) {
+        String truncatedJD = jobDescription.length() > 5000 ? jobDescription.substring(0, 5000) : jobDescription;
+        return String.format(
+                """
+                You are an expert Talent Acquisition Specialist. Analyze the Job Description (JD) to extract keywords.
+
+                **Job Description**:
+                %s
+
+                **OUTPUT FORMAT**:
+                Return ONLY a raw JSON object (no markdown) with this structure:
+                {
+                  "jdKeywords": [
+                    { "keyword": "string", "priority": 1-10 }
+                  ]
+                }
+                """, truncatedJD);
+    }
+
+    private String buildGapAnalysisPrompt(String resumeText, String extractionJson) {
+        String truncatedResume = resumeText.length() > 10000 ? resumeText.substring(0, 10000) : resumeText;
+        return String.format(
+                """
+                You are an expert Talent Acquisition Specialist. Compare the extracted JD keywords against the Resume.
+
+                **Task**:
+                1. Identify which keywords from 'jdKeywords' are MISSING from the Resume.
+                2. For each MISSING keyword, suggest which specific work experience or project entry is the best fit for it.
+
+                **Resume Text**:
+                %s
+
+                **Extracted Keywords**:
+                %s
+
+                **OUTPUT FORMAT**:
+                Return ONLY a raw JSON object (no markdown) with this structure:
+                {
+                  "missingKeywords": [
+                    { "keyword": "string", "suggestedSection": "Experience/Project Title" }
+                  ]
+                }
+                """, truncatedResume, extractionJson);
+    }
+
+    private String buildInjectionPrompt(String resumeText, String jobDescription, String gapAnalysisJson, List<String> manualMissingKeywords) {
         String truncatedResume = resumeText.length() > 10000 ? resumeText.substring(0, 10000) : resumeText;
         String truncatedJD = jobDescription.length() > 5000 ? jobDescription.substring(0, 5000) : jobDescription;
+        String manualKeywordsStr = manualMissingKeywords != null ? manualMissingKeywords.toString() : "[]";
 
         return String.format(
                 """
-                    You are an expert Talent Acquisition Specialist and Career Coach. Validate the resume against the Job Description (JD).
-        
-                    **Core Logic**:
-                    1. **Match Score**: 0-100. Evaluate based on specific Hard Skills, Soft Skills, Tools, and Cultural Fit.
-                    2. **Keywords Extraction**:
-                       - **jdKeywords**: Extract all critical technical and soft skills from the Job Description (e.g. "Java", "Agile").
-                       - **matchKeywords**: Extract the subset of 'jdKeywords' that are explicitly present in the Resume.
-                       - **matchKeywords**: Extract the subset of 'jdKeywords' that are explicitly present in the Resume.
-                       - **missingKeywords**: Identify critical requirements (Tech Stack, Methodologies) in 'jdKeywords' that are COMPLETELY ABSENT from the Resume. **CRITICAL**: If a word appears *anywhere* in the resume text (even in a different section), you MUST NOT list it as missing.
-                       - **addedKeywords**: Identify keywords that you have ADDED to the resume content during the improvement/rewrite process to better align with the JD.
-                    3. **Structure Extraction**: EXTRACT the entire resume content into a structured format.
-                    4. **Improvements**: REWRITE bullet points to be impactful, result-oriented, and aligned with the JD's tone.
-                       - **STRATEGY**: Look at the 'missingKeywords' list. Try to **INTELLIGENTLY WEAVE** these missing keywords into the 'Improved' bullet points where they fit contextually.
-                       - **GOAL**: The 'Improved' version should effectively "fill the gaps" and increase the match score.
-                       - **CONSTRAINT**: Do not force a keyword if it makes no sense. The new text must remain truthful to the original experience, just framed better to highlight the skill if applicable.
-        
-                    **Constraints**:
-                    - **CRITICAL**: DO NOT REMOVE INFORMATION. Preserve all original details, numbers, and context.
-                    - **Tone**: Professional, confident, and action-oriented.
-                    - **Experience & Project Summaries**:
-                      * **EXTRACT** the summary exactly as it appears in the resume text.
-                      * **DO NOT** summarize, rewrite, or shorten it.
-                      * If no summary exists, return an empty string. **DO NOT** generate a summary.
-                    - **Project Location**: Extract if present in input.
-                    - **Work Experience Summary**: If 'description' text exists in input that isn't a bullet point, treat it as summary.
-                    - **Keyword Strictness**:
-                      * **STRICTLY EXCLUDE** all locations, city names, country names, and states (e.g., "Chicago", "London", "Remote", "India", "USA", "New York").
-                      * **STRICTLY EXCLUDE** generic words (e.g., "Professional", "Senior", "Junior", "Experience", "Various").
-                      * **STRICTLY EXCLUDE** dates, years, email addresses, and phone numbers.
-                      * **Norm**: Return keywords in Title Case or Lowercase consistently.
-                      * **Focus**: Only extract Technologies, Tools, Hard Skills (e.g. Java, AWS), and Specific Soft Skills (e.g. Leadership).
-                    - **Formatting**:
-                      * **NO MARKDOWN**: The 'improved' text must be plain text. Do NOT use **bold** or *italics*. It breaks the PDF generator.
-        
-                    **Resume Text**:
-                    %s
-        
-                    **Job Description**:
-                    %s
-        
-                    **OUTPUT FORMAT**:
-                    Return ONLY a raw JSON object (no markdown). Use this exact structure:
+                You are an expert Talent Acquisition Specialist and Career Coach. Validate the resume against the Job Description (JD) and improve it.
+
+                **Core Logic**:
+                1. **Match Score**: 0-100. Evaluate based on specific Hard Skills, Soft Skills, Tools, and Cultural Fit.
+                2. **Keywords Extraction**:
+                   - **jdKeywords**: Extract all critical technical and soft skills from the Job Description.
+                   - **matchKeywords**: Extract the subset of 'jdKeywords' that are explicitly present in the Resume.
+                   - **missingKeywords**: Identify critical requirements in 'jdKeywords' that are COMPLETELY ABSENT from the Resume.
+                   - **addedKeywords**: Identify keywords that you have ADDED to the resume content during the improvement/rewrite process.
+                3. **Structure Extraction**: EXTRACT the entire resume content into a structured format.
+                4. **Improvements**: REWRITE bullet points to be impactful, result-oriented, and aligned with the JD's tone.
+                   - **STRATEGY**: Look at the 'missingKeywords' list provided. **INTELLIGENTLY WEAVE** these missing keywords into the 'Improved' bullet points where they fit contextually.
+                   - **GOAL**: The 'Improved' version should effectively "fill the gaps" and increase the match score.
+                   - **RELEVANCE CHECK**: Do NOT add or include features from the missing keywords to the resume and/or addedKeywords if there is no relevance to that keyword and the user's work experience.
+                   - **CONSTRAINT**: Do not force a keyword if it makes no sense. The new text must remain truthful to the original experience.
+                   - **LENGTH CONSTRAINT**: The 'Improved' bullet point must be approximately the **SAME LENGTH** as the 'Original' bullet point. Do not make it significantly longer. Focus on density and impact, not verbosity.
+                   - **INJECTED KEYWORDS**: For each improved bullet point, list the exact keywords from the 'missingKeywords' list that were injected.
+                   - **UNCHANGED POINTS**: If a bullet point is already strong or doesn't need improvement, you MUST still return it. Set 'improved' to null. DO NOT OMIT ANY BULLET POINTS.
+                   - **IMPROVEMENT LOGIC**: Only provide text in the 'improved' field if you have genuinely enhanced the bullet point (e.g., added a missing keyword, improved impact/metrics). If no changes are made, 'improved' must be null.
+                   - **COMPLETENESS**: You MUST return ALL work experience entries and ALL projects found in the original resume. Do not skip any sections or entries.
+
+                **Manual Missing Keywords**:
+                I have identified these specific missing keywords using a strict dictionary scan: %s.
+                Your goal is to prioritize these keywords when rewriting the resume bullets.
+
+                **Constraints**:
+                - **CRITICAL**: DO NOT REMOVE INFORMATION. Preserve all original details, numbers, and context.
+                - **Tone**: Professional, confident, and action-oriented.
+                - **Experience & Project Summaries**:
+                  * **EXTRACT** the summary exactly as it appears in the resume text.
+                  * **DO NOT** summarize, rewrite, or shorten it.
+                  * If no summary exists, return an empty string. **DO NOT** generate a summary.
+                - **Project Location**: Extract if present in input.
+                - **Work Experience Summary**: If 'description' text exists in input that isn't a bullet point, treat it as summary.
+                - **Keyword Strictness**:
+                  * **STRICTLY EXCLUDE** all locations, city names, country names, and states.
+                  * **STRICTLY EXCLUDE** generic words.
+                  * **STRICTLY EXCLUDE** dates, years, email addresses, and phone numbers.
+                  * **Norm**: Return keywords in Title Case or Lowercase consistently.
+                  * **Focus**: Only extract Technologies, Tools, Hard Skills, and Specific Soft Skills.
+                - **Formatting**:
+                  * **NO MARKDOWN**: The 'improved' text must be plain text. Do NOT use **bold** or *italics*.
+
+                **Resume Text**:
+                %s
+
+                **Job Description**:
+                %s
+
+                **Gap Analysis (Missing Keywords)**:
+                %s
+
+                **OUTPUT FORMAT**:
+                Return ONLY a raw JSON object (no markdown). Use this exact structure:
+                {
+                  "analysis": {
+                    "matchScore": <0-100>,
+                    "matchedKeywords": ["string"],
+                    "jdKeywords": ["string"],
+                    "missingKeywords": ["string"],
+                    "addedKeywords": ["string"],
+                    "strengths": ["string"]
+                  },
+                  "suggestions": [
                     {
-                      "analysis": {
-                        "matchScore": <0-100>,
-                        "matchKeywords": ["string"],
-                        "jdKeywords": ["string"],
-                        "missingKeywords": ["string"],
-                        "addedKeywords": ["string"],
-                        "strengths": ["string"]
-                      },
-                      "suggestions": [
-                        {
-                          "id": "unique-id",
-                          "type": "content",
-                          "originalText": "string",
-                          "suggestedText": "string",
-                          "reason": "string",
-                          "priority": "high"
-                        }
-                      ],
-                      "resumeData": {
-                        "personalInfo": {
-                          "name": "string",
-                          "phone": "string",
-                          "email": "string",
-                          "linkedin": "url or empty",
-                          "portfolio": "url or empty"
-                        },
-                        "education": [
-                          { "institution": "string", "date": "string", "degree": "string", "gpa": "string" }
-                        ],
-                        "skills": {
-                          "languages": "string",
-                          "frameworks": "string",
-                          "tools": "string"
-                        },
-                        "experience": [
-                          {
-                            "title": "string",
-                            "company": "string",
-                            "date": "string",
-                            "location": "string",
-                            "summary": "string (Max 6 words, or empty)",
-                            "bulletPoints": [
-                              { "original": "original text", "improved": "improved text", "accepted": false }
-                            ]
-                          }
-                        ],
-                        "projects": [
-                          {
-                            "title": "string",
-                            "link": "url/string",
-                            "date": "string",
-                            "summary": "string (Max 6 words, or empty)",
-                            "location": "string (or empty)",
-                            "bulletPoints": [
-                              { "original": "original text", "improved": "improved text", "accepted": false }
-                            ]
-                          }
+                      "id": "unique-id",
+                      "type": "content",
+                      "originalText": "string",
+                      "suggestedText": "string",
+                      "reason": "string",
+                      "priority": "high"
+                    }
+                  ],
+                  "resumeData": {
+                    "personalInfo": {
+                      "name": "string",
+                      "phone": "string",
+                      "email": "string",
+                      "linkedin": "url or empty",
+                      "portfolio": "url or empty"
+                    },
+                    "education": [
+                      { "institution": "string", "date": "string", "degree": "string", "gpa": "string" }
+                    ],
+                    "skills": {
+                      "languages": "string",
+                      "frameworks": "string",
+                      "tools": "string"
+                    },
+                    "experience": [
+                      {
+                        "title": "string",
+                        "company": "string",
+                        "date": "string",
+                        "location": "string",
+                        "summary": "string (Max 6 words, or empty)",
+                        "bulletPoints": [
+                          { "original": "original text", "improved": "improved text", "injectedKeywords": ["string"] }
                         ]
                       }
-                    }
-                    """,
-                truncatedResume, truncatedJD);
+                    ],
+                    "projects": [
+                      {
+                        "title": "string",
+                        "link": "url/string",
+                        "date": "string",
+                        "summary": "string (Max 6 words, or empty)",
+                        "location": "string (or empty)",
+                        "bulletPoints": [
+                          { "original": "original text", "improved": "improved text", "injectedKeywords": ["string"] }
+                        ]
+                      }
+                    ]
+                  }
+                }
+                """, manualKeywordsStr, truncatedResume, truncatedJD, gapAnalysisJson);
     }
 
     private String callGeminiApi(String prompt) {
@@ -167,6 +234,7 @@ public class ResumeAnalyzerService {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
 
+        // Gemini API expects: { "contents": [ { "parts": [ { "text": "..." } ] } ] }
         Map<String, String> part = Map.of("text", prompt);
         Map<String, Object> content = Map.of("parts", List.of(part));
         Map<String, Object> requestBody = Map.of("contents", List.of(content));
@@ -186,7 +254,7 @@ public class ResumeAnalyzerService {
                     throw new RuntimeException("Gemini API Rate Limit Exceeded after retries: " + e.getMessage(), e);
                 }
                 try {
-                    Thread.sleep(retryDelay * attempt);
+                    Thread.sleep((long) retryDelay * attempt);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException("Interrupted during retry wait", ie);
@@ -216,16 +284,21 @@ public class ResumeAnalyzerService {
         }
     }
 
+    private JsonNode parseJson(String jsonString) {
+        try {
+            String cleanJson = extractJsonBlock(jsonString);
+            return objectMapper.readTree(cleanJson);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to parse JSON: " + jsonString, e);
+        }
+    }
+
     private AnalysisResponse parseResponse(String llmOutput, String resumeText) {
         try {
             String cleanJson = extractJsonBlock(llmOutput);
-//            System.out.println("DEBUG: Extracted JSON: " + cleanJson);
+            System.out.println("DEBUG: Extracted JSON: " + cleanJson);
 
             AnalysisResponse partialResponse = objectMapper.readValue(cleanJson, AnalysisResponse.class);
-
-//            if (partialResponse.getResumeData() != null) {
-//                System.out.println("DEBUG: Parsed Education List: " + partialResponse.getResumeData().getEducation());
-//            }
 
             partialResponse.setResumeText(resumeText);
 
@@ -271,6 +344,17 @@ public class ResumeAnalyzerService {
         }
     }
 
+    private String sanitizeLatex(String text) {
+        if (text == null) return null;
+        return text.replace("&", "\\\\&")
+                   .replace("%", "\\\\%")
+                   .replace("$", "\\\\$")
+                   .replace("#", "\\\\#")
+                   .replace("_", "\\\\_")
+                   .replace("{", "\\\\{")
+                   .replace("}", "\\\\}");
+    }
+
     private String extractJsonBlock(String text) {
         String trimmed = text.trim();
         if (trimmed.startsWith("```json")) {
@@ -291,5 +375,4 @@ public class ResumeAnalyzerService {
         }
         return trimmed;
     }
-
 }

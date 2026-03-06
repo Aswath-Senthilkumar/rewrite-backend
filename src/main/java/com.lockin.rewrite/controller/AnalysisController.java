@@ -2,10 +2,7 @@ package com.lockin.rewrite.controller;
 
 import com.lockin.rewrite.model.AnalysisResponse;
 import com.lockin.rewrite.model.ResumeData;
-import com.lockin.rewrite.service.DocumentAnalyzerService;
-import com.lockin.rewrite.service.DocumentParserService;
-import com.lockin.rewrite.service.LatexService;
-import com.lockin.rewrite.service.ResumeAnalyzerService;
+import com.lockin.rewrite.service.*;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
@@ -31,19 +28,22 @@ public class AnalysisController {
     private final String bucketName;
     private final LatexService latexService;
     private final DocumentAnalyzerService documentAnalyzerService;
+    private final KeywordScannerService keywordScannerService;
 
     public AnalysisController(S3Client s3Client,
                               DocumentParserService documentParserService,
                               ResumeAnalyzerService resumeAnalyzerService,
                               LatexService latexService,
                               @Value("${aws.s3.bucketName}") String bucketName,
-                              DocumentAnalyzerService documentAnalyzerService) {
+                              DocumentAnalyzerService documentAnalyzerService,
+                              KeywordScannerService keywordScannerService) {
         this.s3Client = s3Client;
         this.documentParserService = documentParserService;
         this.resumeAnalyzerService = resumeAnalyzerService;
         this.latexService = latexService;
         this.bucketName = bucketName;
         this.documentAnalyzerService = documentAnalyzerService;
+        this.keywordScannerService = keywordScannerService;
     }
 
     @PostMapping("/process")
@@ -70,7 +70,9 @@ public class AnalysisController {
                 resumeText = documentParserService.parseDocx(fileData);
             }
 
-            List<String> missingKeywords = new ArrayList<>(); // TODO: Implement matching logic if strictly needed
+            // Use KeywordScannerService to find missing keywords
+            KeywordScannerService.KeywordAnalysisResult keywordAnalysis = keywordScannerService.analyze(jobDescription, resumeText);
+            List<String> missingKeywords = keywordAnalysis.getMissingFromResume();
 
             AnalysisResponse result = resumeAnalyzerService.analyzeResume(resumeText, jobDescription, missingKeywords, resumeKey);
 
