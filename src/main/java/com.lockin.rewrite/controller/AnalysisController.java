@@ -3,23 +3,20 @@ package com.lockin.rewrite.controller;
 import com.lockin.rewrite.model.AnalysisResponse;
 import com.lockin.rewrite.model.ResumeData;
 import com.lockin.rewrite.service.*;
-import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api")
-@CrossOrigin(origins = "http://localhost:3000")
+@RequestMapping("/v1")
+@CrossOrigin
 public class AnalysisController {
 
     private final S3Client s3Client;
@@ -27,7 +24,7 @@ public class AnalysisController {
     private final ResumeAnalyzerService resumeAnalyzerService;
     private final String bucketName;
     private final LatexService latexService;
-    private final DocumentAnalyzerService documentAnalyzerService;
+//    private final DocumentAnalyzerService documentAnalyzerService;
     private final KeywordScannerService keywordScannerService;
 
     public AnalysisController(S3Client s3Client,
@@ -42,11 +39,11 @@ public class AnalysisController {
         this.resumeAnalyzerService = resumeAnalyzerService;
         this.latexService = latexService;
         this.bucketName = bucketName;
-        this.documentAnalyzerService = documentAnalyzerService;
+//        this.documentAnalyzerService = documentAnalyzerService;
         this.keywordScannerService = keywordScannerService;
     }
 
-    @PostMapping("/process")
+    @PostMapping("/analyze-resume")
     public ResponseEntity<?> processResume(@RequestBody Map<String, String> payload) {
         try {
             String resumeKey = payload.get("resumeKey");
@@ -83,7 +80,7 @@ public class AnalysisController {
         }
     }
 
-    @PostMapping("/generate-pdf")
+    @PostMapping("/export-result")
     public ResponseEntity<?> generatePdf(@RequestBody ResumeData resumeData) {
         try {
             byte[] pdfBytes = latexService.generatePdf(resumeData);
@@ -99,18 +96,8 @@ public class AnalysisController {
     }
 
     @PostMapping("/get-resume")
-    public ResponseEntity<?> getResume(@RequestParam("file") MultipartFile file, HttpServletRequest request) {
+    public ResponseEntity<?> getResume(@RequestBody ResumeData resumeData) {
         try {
-            System.out.println("Content-Type: " + request.getContentType());
-            
-            if (file.isEmpty()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "File is empty"));
-            }
-
-            byte[] fileData = file.getBytes();
-            String resumeText = documentParserService.parseDocx(fileData);
-
-            ResumeData resumeData = documentAnalyzerService.analyzeDocument(resumeText);
             byte[] resumeBytes = latexService.generatePdf(resumeData);
 
             return ResponseEntity.ok()

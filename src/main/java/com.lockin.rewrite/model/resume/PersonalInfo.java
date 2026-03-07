@@ -13,4 +13,6 @@ public class PersonalInfo {
     private String phone;
     private String linkedin;
     private String website;
+    private String github;
+    private String portfolio;
 }

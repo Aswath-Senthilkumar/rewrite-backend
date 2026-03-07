@@ -7,8 +7,8 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api")
-@CrossOrigin(origins = "http://localhost:3000") // Allow frontend to call
+@RequestMapping("/v1")
+@CrossOrigin
 public class S3Controller {
 
     private final S3Service s3Service;
@@ -17,7 +17,7 @@ public class S3Controller {
         this.s3Service = s3Service;
     }
 
-    @PostMapping("/presigned-upload")
+    @PostMapping("/document-link")
     public ResponseEntity<?> getPresignedUploadUrl(@RequestBody Map<String, String> payload) {
         String fileName = payload.get("fileName");
         String fileType = payload.get("fileType");
