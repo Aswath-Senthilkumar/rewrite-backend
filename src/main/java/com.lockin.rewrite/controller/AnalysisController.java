@@ -24,7 +24,6 @@ public class AnalysisController {
     private final ResumeAnalyzerService resumeAnalyzerService;
     private final String bucketName;
     private final LatexService latexService;
-//    private final DocumentAnalyzerService documentAnalyzerService;
     private final KeywordScannerService keywordScannerService;
 
     public AnalysisController(S3Client s3Client,
@@ -39,7 +38,6 @@ public class AnalysisController {
         this.resumeAnalyzerService = resumeAnalyzerService;
         this.latexService = latexService;
         this.bucketName = bucketName;
-//        this.documentAnalyzerService = documentAnalyzerService;
         this.keywordScannerService = keywordScannerService;
     }
 
