@@ -102,6 +102,7 @@
 	</dependencyManagement>
 
 	<build>
+		<finalName>rewrite-backend</finalName>
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
